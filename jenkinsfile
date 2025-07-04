@@ -1,0 +1,49 @@
+pipeline{
+    agent any
+     environment {
+    AWS_REGION = '<REGION>'
+    ECR_URI = '<AWS ACCOUNT ID>.dkr.ecr.<REGION>.amazonaws.com/backend'
+    IMAGE_VERSION = "v${BUILD_NUMBER}"
+  }
+    stages{
+        stage(checkout){
+            steps{
+                git branch: 'main', url: 'https://github.com/shrutikasorte/go-web-app.git'
+            }
+        }
+        stage('build'){
+            steps{
+                sh '/usr/local/go/bin/go build -o main -buildvcs=false'
+
+            }
+        }
+        stage('docker-image'){
+            steps{
+                sh 'docker build -t <IMAGE-NAME>:$IMAGE_VERSION .'
+            }
+        }
+        stage('image-push'){
+            steps{
+                sh '''
+                aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 904300192549.dkr.ecr.ap-south-1.amazonaws.com
+                docker tag <IMAGE-NAME>:$IMAGE_VERSION $ECR_URI
+                docker push $ECR_URI
+                '''
+            }
+        }
+        stage('image-pull'){
+    steps{
+       withCredentials([sshUserPrivateKey(credentialsId: 'key', keyFileVariable: 'key', usernameVariable: 'ec2-user')]) {
+           sh '''
+           ssh -o StrictHostKeyChecking=no -i "$key" ec2-user@15.206.158.62 << 'EOF'
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin <AWS-ACCOUNT-ID>.dkr.ecr.<REGION>.amazonaws.com
+docker pull <IMAGE-NAME>:V${BUILD-NUMBER}
+kubectl set image deployment/<DEPLOYMENT-NAME> <CONATINER-NAME>=<IMAGE-NAME>:V${BUILD-NUMBER}
+kubectl rollout status deployment/go
+EOF
+           '''
+       }
+    }
+}
+    }
+}
